@@ -6,15 +6,19 @@ and coordinates of the actual "簽署及蓋章" (sign & stamp) block — filteri
 out the false-positive that appears inside the boilerplate sentence
 ("如對上述報價無異議，請簽署及蓋章寄回作實").
 
-Deploy on Hugging Face Spaces using the "FastAPI" / Docker template.
+Deploy on Render (Python native environment, no Docker needed).
+
+Auth: set an Environment Variable named API_KEY in your Render service
+settings. Callers must then send header:  X-API-Key: <your chosen value>
 """
 
 import io
+import os
 import tempfile
 from typing import List, Dict, Any
 
 import pdfplumber
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Stamp Finder API", version="1.0")
@@ -25,6 +29,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Simple shared-secret auth. Set this as an Environment Variable in Render
+# (Dashboard -> your service -> Environment -> Add Environment Variable
+#  key: API_KEY, value: <a password you choose>).
+# If API_KEY is not set, the endpoint stays open (useful for local testing).
+API_KEY = os.environ.get("API_KEY")
+
+
+def check_api_key(x_api_key: str = Header(default=None)):
+    if API_KEY and x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 # Keywords that mark a genuine sign/stamp block
 TARGET_PHRASE = "簽署及蓋章"
@@ -122,7 +137,8 @@ def root():
 
 
 @app.post("/find-stamp")
-async def find_stamp(file: UploadFile = File(...)):
+async def find_stamp(file: UploadFile = File(...), x_api_key: str = Header(default=None)):
+    check_api_key(x_api_key)
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF file")
 
